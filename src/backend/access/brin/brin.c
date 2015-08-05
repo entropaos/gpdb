@@ -26,10 +26,12 @@
 #include "access/relscan.h"
 #include "access/xact.h"
 #include "catalog/index.h"
+#include "executor/executor.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
+#include "storage/procarray.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -993,6 +995,8 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 	Size		phsz;
 	OffsetNumber offset;
 	BlockNumber scanNumBlks;
+	EState *estate;
+	ExprContext *econtext;
 
 	/*
 	 * Insert the placeholder tuple
@@ -1030,6 +1034,14 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 		scanNumBlks = state->bs_pagesPerRange;
 	}
 
+        /*
+         * Need an EState for evaluation of index expressions and partial-index
+         * predicates.  Also a slot to hold the current tuple.
+         */
+        estate = CreateExecutorState();
+        econtext = GetPerTupleExprContext(estate);
+        econtext->ecxt_scantuple = MakeSingleTupleTableSlot(RelationGetDescr(heapRel));
+
 	/*
 	 * Execute the partial heap scan covering the heap blocks in the specified
 	 * page range, summarizing the heap tuples in it.  This scan stops just
@@ -1041,6 +1053,8 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 	 */
 	state->bs_currRangeStart = heapBlk;
 	IndexBuildHeapRangeScan(heapRel, state->bs_irel, indexInfo, false, true,
+							estate, SnapshotAny,
+							GetOldestXmin(heapRel, true),
 							heapBlk, scanNumBlks,
 							brinbuildCallback, (void *) state);
 
@@ -1096,6 +1110,7 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 	}
 
 	ReleaseBuffer(phbuf);
+	FreeExecutorState(estate);
 }
 
 /*

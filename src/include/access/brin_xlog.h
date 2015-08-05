@@ -104,7 +104,7 @@ typedef struct xl_brin_revmap_extend
 
 
 extern void brin_desc(StringInfo buf, XLogRecord *record);
-extern void brin_redo(XLogRecPtr lsn, XLogRecord *record);
+extern void brin_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record);
 extern const char *brin_identify(uint8 info);
 
 #endif   /* BRIN_XLOG_H */

@@ -147,7 +147,7 @@ brin_xlog_update(XLogRecPtr lsn, XLogRecord *record)
 	blkno = ItemPointerGetBlockNumber(&(xlrec->oldtid));
 	buffer = XLogReadBuffer(xlrec->insert.node, blkno, false);
 	/* FIXME: What to do if the old buffer is invalid */
-	if (!BufferIsValid(buffer));
+	if (!BufferIsValid(buffer))
 		return;
 	page = BufferGetPage(buffer);
 	if (lsn > PageGetLSN(page))
@@ -271,7 +271,7 @@ brin_xlog_revmap_extend(XLogRecPtr lsn, XLogRecord *record)
 }
 
 void
-brin_redo(XLogRecPtr lsn, XLogRecord *record)
+brin_redo(XLogRecPtr beginLoc, XLogRecPtr lsn, XLogRecord *record)
 {
 	uint8		info = record->xl_info & ~XLR_INFO_MASK;
 

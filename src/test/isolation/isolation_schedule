@@ -36,8 +36,24 @@ test: delete-abort-savept
 #test: delete-abort-savept-2
 #test: aborted-keyrevoke
 test: multixact-no-deadlock
+<<<<<<< HEAD
 #test: multixact-no-forget
 #test: propagate-lock-delete
+=======
+test: multixact-no-forget
+test: propagate-lock-delete
+test: tuplelock-conflict
+test: nowait
+test: nowait-2
+test: nowait-3
+test: nowait-4
+test: nowait-5
+test: skip-locked
+test: skip-locked-2
+test: skip-locked-3
+test: skip-locked-4
+test: brin-1
+>>>>>>> 94a8b45feb... Fix BRIN to use SnapshotAny during summarization
 test: drop-index-concurrently-1
 test: alter-table-1
 test: timeouts
