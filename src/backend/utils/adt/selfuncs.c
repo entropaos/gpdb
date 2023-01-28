@@ -6279,6 +6279,170 @@ string_to_bytea_const(const char *str, size_t str_len)
  */
 
 /*
+ * deconstruct_indexquals is a simple function to examine the indexquals
+ * attached to a proposed IndexPath.  It returns a list of IndexQualInfo
+ * structs, one per qual expression.
+ */
+typedef struct
+{
+	RestrictInfo *rinfo;		/* the indexqual itself */
+	int			indexcol;		/* zero-based index column number */
+	bool		varonleft;		/* true if index column is on left of qual */
+	Oid			clause_op;		/* qual's operator OID, if relevant */
+	Node	   *other_operand;	/* non-index operand of qual's operator */
+} IndexQualInfo;
+
+static List *
+deconstruct_indexquals(IndexPath *path)
+{
+	List	   *result = NIL;
+	IndexOptInfo *index = path->indexinfo;
+	ListCell   *lcc,
+			   *lci;
+
+	forboth(lcc, path->indexquals, lci, path->indexqualcols)
+	{
+		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lcc);
+		int			indexcol = lfirst_int(lci);
+		Expr	   *clause;
+		Node	   *leftop,
+				   *rightop;
+		IndexQualInfo *qinfo;
+
+		Assert(IsA(rinfo, RestrictInfo));
+		clause = rinfo->clause;
+
+		qinfo = (IndexQualInfo *) palloc(sizeof(IndexQualInfo));
+		qinfo->rinfo = rinfo;
+		qinfo->indexcol = indexcol;
+
+		if (IsA(clause, OpExpr))
+		{
+			qinfo->clause_op = ((OpExpr *) clause)->opno;
+			leftop = get_leftop(clause);
+			rightop = get_rightop(clause);
+			if (match_index_to_operand(leftop, indexcol, index))
+			{
+				qinfo->varonleft = true;
+				qinfo->other_operand = rightop;
+			}
+			else
+			{
+				Assert(match_index_to_operand(rightop, indexcol, index));
+				qinfo->varonleft = false;
+				qinfo->other_operand = leftop;
+			}
+		}
+		else if (IsA(clause, RowCompareExpr))
+		{
+			RowCompareExpr *rc = (RowCompareExpr *) clause;
+
+			qinfo->clause_op = linitial_oid(rc->opnos);
+			/* Examine only first columns to determine left/right sides */
+			if (match_index_to_operand((Node *) linitial(rc->largs),
+									   indexcol, index))
+			{
+				qinfo->varonleft = true;
+				qinfo->other_operand = (Node *) rc->rargs;
+			}
+			else
+			{
+				Assert(match_index_to_operand((Node *) linitial(rc->rargs),
+											  indexcol, index));
+				qinfo->varonleft = false;
+				qinfo->other_operand = (Node *) rc->largs;
+			}
+		}
+		else if (IsA(clause, ScalarArrayOpExpr))
+		{
+			ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) clause;
+
+			qinfo->clause_op = saop->opno;
+			/* index column is always on the left in this case */
+			Assert(match_index_to_operand((Node *) linitial(saop->args),
+										  indexcol, index));
+			qinfo->varonleft = true;
+			qinfo->other_operand = (Node *) lsecond(saop->args);
+		}
+		else if (IsA(clause, NullTest))
+		{
+			qinfo->clause_op = InvalidOid;
+			Assert(match_index_to_operand((Node *) ((NullTest *) clause)->arg,
+										  indexcol, index));
+			qinfo->varonleft = true;
+			qinfo->other_operand = NULL;
+		}
+		else
+		{
+			elog(ERROR, "unsupported indexqual type: %d",
+				 (int) nodeTag(clause));
+		}
+
+		result = lappend(result, qinfo);
+	}
+	return result;
+}
+
+/*
+ * Simple function to compute the total eval cost of the "other operands"
+ * in an IndexQualInfo list.  Since we know these will be evaluated just
+ * once per scan, there's no need to distinguish startup from per-row cost.
+ */
+static Cost
+other_operands_eval_cost(PlannerInfo *root, List *qinfos)
+{
+	Cost		qual_arg_cost = 0;
+	ListCell   *lc;
+
+	foreach(lc, qinfos)
+	{
+		IndexQualInfo *qinfo = (IndexQualInfo *) lfirst(lc);
+		QualCost	index_qual_cost;
+
+		cost_qual_eval_node(&index_qual_cost, qinfo->other_operand, root);
+		qual_arg_cost += index_qual_cost.startup + index_qual_cost.per_tuple;
+	}
+	return qual_arg_cost;
+}
+
+/*
+ * Get other-operand eval cost for an index orderby list.
+ *
+ * Index orderby expressions aren't represented as RestrictInfos (since they
+ * aren't boolean, usually).  So we can't apply deconstruct_indexquals to
+ * them.  However, they are much simpler to deal with since they are always
+ * OpExprs and the index column is always on the left.
+ */
+static Cost
+orderby_operands_eval_cost(PlannerInfo *root, IndexPath *path)
+{
+	Cost		qual_arg_cost = 0;
+	ListCell   *lc;
+
+	foreach(lc, path->indexorderbys)
+	{
+		Expr	   *clause = (Expr *) lfirst(lc);
+		Node	   *other_operand;
+		QualCost	index_qual_cost;
+
+		if (IsA(clause, OpExpr))
+		{
+			other_operand = get_rightop(clause);
+		}
+		else
+		{
+			elog(ERROR, "unsupported indexorderby type: %d",
+				 (int) nodeTag(clause));
+			other_operand = NULL;		/* keep compiler quiet */
+		}
+
+		cost_qual_eval_node(&index_qual_cost, other_operand, root);
+		qual_arg_cost += index_qual_cost.startup + index_qual_cost.per_tuple;
+	}
+	return qual_arg_cost;
+}
+
+/*
  * genericcostestimate is a general-purpose estimator that can be used for
  * most index types.  In some cases we use genericcostestimate as the base
  * code and then incorporate additional index-type-specific knowledge in
@@ -7787,7 +7951,7 @@ brincostestimate(PG_FUNCTION_ARGS)
 	*indexSelectivity =
 		clauselist_selectivity(root, indexQuals,
 							   path->indexinfo->rel->relid,
-							   JOIN_INNER, NULL);
+							   JOIN_INNER, NULL, false);
 	*indexCorrelation = 1;
 
 	/*
