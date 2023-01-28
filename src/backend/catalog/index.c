@@ -2498,34 +2498,6 @@ IndexBuildScan(Relation parentRelation,
 			   IndexBuildCallback callback,
 			   void *callback_state)
 {
-	return IndexBuildHeapRangeScan(heapRelation, indexRelation,
-								   indexInfo, allow_sync,
-								   false,
-								   0, InvalidBlockNumber,
-								   callback, callback_state);
-}
-
-/*
- * As above, except that instead of scanning the complete heap, only the given
- * number of blocks are scanned.  Scan to end-of-rel can be signalled by
- * passing InvalidBlockNumber as numblocks.  Note that restricting the range
- * to scan cannot be done when requesting syncscan.
- *
- * When "anyvisible" mode is requested, all tuples visible to any transaction
- * are considered, including those inserted or deleted by transactions that are
- * still in progress.
- */
-double
-IndexBuildHeapRangeScan(Relation heapRelation,
-						Relation indexRelation,
-						IndexInfo *indexInfo,
-						bool allow_sync,
-						bool anyvisible,
-						BlockNumber start_blockno,
-						BlockNumber numblocks,
-						IndexBuildCallback callback,
-						void *callback_state)
-{
 	double		reltuples;
 	TupleTableSlot *slot;
 	EState	   *estate;
@@ -2660,6 +2632,31 @@ IndexBuildHeapScan(Relation heapRelation,
 				   TransactionId OldestXmin,
 				   IndexBuildCallback callback,
 				   void *callback_state)
+{
+	return IndexBuildHeapRangeScan(heapRelation, indexRelation,
+								   indexInfo, allow_sync,
+								   estate, snapshot, OldestXmin,
+								   0, InvalidBlockNumber,
+								   callback, callback_state);
+}
+
+/*
+ * As above, except that instead of scanning the complete heap, only the given
+ * number of blocks are scanned.  Scan to end-of-rel can be signalled by
+ * passing InvalidBlockNumber as numblocks.
+ */
+double
+IndexBuildHeapRangeScan(Relation heapRelation,
+						Relation indexRelation,
+						IndexInfo *indexInfo,
+						bool allow_sync,
+						EState *estate,
+						Snapshot snapshot,
+						TransactionId OldestXmin,
+						BlockNumber start_blockno,
+						BlockNumber numblocks,
+						IndexBuildCallback callback,
+						void *callback_state)
 {
 	bool		is_system_catalog;
 	bool		checking_uniqueness;

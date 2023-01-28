@@ -122,9 +122,11 @@ extern double IndexBuildHeapRangeScan(Relation heapRelation,
 						Relation indexRelation,
 						IndexInfo *indexInfo,
 						bool allow_sync,
-						bool anyvisible,
+						EState *estate,
+						Snapshot snapshot,
+						TransactionId OldestXmin,
 						BlockNumber start_blockno,
-						BlockNumber end_blockno,
+						BlockNumber numblocks,
 						IndexBuildCallback callback,
 						void *callback_state);
 
