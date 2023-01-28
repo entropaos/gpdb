@@ -447,6 +447,38 @@ itemoffcompare(const void *itemidp1, const void *itemidp2)
 }
 
 /*
+ * After removing or marking some line pointers unused, move the tuples to
+ * remove the gaps caused by the removed items.
+ */
+static void
+compactify_tuples(itemIdSort itemidbase, int nitems, Page page)
+{
+	PageHeader	phdr = (PageHeader) page;
+	Offset		upper;
+	int			i;
+
+	/* sort itemIdSortData array into decreasing itemoff order */
+	qsort((char *) itemidbase, nitems, sizeof(itemIdSortData),
+		  itemoffcompare);
+
+	upper = phdr->pd_special;
+	for (i = 0; i < nitems; i++)
+	{
+		itemIdSort	itemidptr = &itemidbase[i];
+		ItemId		lp;
+
+		lp = PageGetItemId(page, itemidptr->offsetindex + 1);
+		upper -= itemidptr->alignedlen;
+		memmove((char *) page + upper,
+				(char *) page + itemidptr->itemoff,
+				itemidptr->alignedlen);
+		lp->lp_off = upper;
+	}
+
+	phdr->pd_upper = upper;
+}
+
+/*
  * PageRepairFragmentation
  *
  * Frees fragmented space on a page.
