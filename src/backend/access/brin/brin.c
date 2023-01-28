@@ -520,7 +520,7 @@ brinrestrpos(PG_FUNCTION_ARGS)
  */
 static void
 brinbuildCallback(Relation index,
-				  HeapTuple htup,
+				  ItemPointer tupleId,
 				  Datum *values,
 				  bool *isnull,
 				  bool tupleIsAlive,
@@ -530,7 +530,7 @@ brinbuildCallback(Relation index,
 	BlockNumber thisblock;
 	int			i;
 
-	thisblock = ItemPointerGetBlockNumber(&htup->t_self);
+	thisblock = ItemPointerGetBlockNumber(tupleId);
 
 	/*
 	 * If we're in a block that belongs to a future range, summarize what

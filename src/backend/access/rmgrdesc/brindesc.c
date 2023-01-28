@@ -17,10 +17,10 @@
 #include "access/brin_xlog.h"
 
 void
-brin_desc(StringInfo buf, XLogReaderState *record)
+brin_desc(StringInfo buf, XLogRecord *record)
 {
 	char	   *rec = XLogRecGetData(record);
-	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		info = record->xl_info & ~XLR_INFO_MASK;
 
 	info &= XLOG_BRIN_OPMASK;
 	if (info == XLOG_BRIN_CREATE_INDEX)
@@ -34,26 +34,32 @@ brin_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_brin_insert *xlrec = (xl_brin_insert *) rec;
 
-		appendStringInfo(buf, "heapBlk %u pagesPerRange %u offnum %u",
+		appendStringInfo(buf, "heapBlk %u revmapBlk %u pagesPerRange %u TID (%u,%u)",
 						 xlrec->heapBlk,
+						 xlrec->revmapBlk,
 						 xlrec->pagesPerRange,
-						 xlrec->offnum);
+						 ItemPointerGetBlockNumber(&xlrec->tid),
+						 ItemPointerGetOffsetNumber(&xlrec->tid));
 	}
 	else if (info == XLOG_BRIN_UPDATE)
 	{
 		xl_brin_update *xlrec = (xl_brin_update *) rec;
 
-		appendStringInfo(buf, "heapBlk %u pagesPerRange %u old offnum %u, new offnum %u",
+		appendStringInfo(buf, "heapBlk %u revmapBlk %u pagesPerRange %u old TID(%u,%u) new TID(%u,%u)",
 						 xlrec->insert.heapBlk,
+						 xlrec->insert.revmapBlk,
 						 xlrec->insert.pagesPerRange,
-						 xlrec->oldOffnum,
-						 xlrec->insert.offnum);
+						 ItemPointerGetBlockNumber(&xlrec->oldtid),
+						 ItemPointerGetOffsetNumber(&xlrec->oldtid),
+						 ItemPointerGetBlockNumber(&xlrec->insert.tid),
+						 ItemPointerGetOffsetNumber(&xlrec->insert.tid));
 	}
 	else if (info == XLOG_BRIN_SAMEPAGE_UPDATE)
 	{
 		xl_brin_samepage_update *xlrec = (xl_brin_samepage_update *) rec;
 
-		appendStringInfo(buf, "offnum %u", xlrec->offnum);
+		appendStringInfo(buf, "TID (%u,%u)", ItemPointerGetBlockNumber(&xlrec->tid),
+											 ItemPointerGetOffsetNumber(&xlrec->tid));
 	}
 	else if (info == XLOG_BRIN_REVMAP_EXTEND)
 	{
