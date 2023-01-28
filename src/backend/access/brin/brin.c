@@ -20,11 +20,11 @@
 #include "access/brin_page.h"
 #include "access/brin_pageops.h"
 #include "access/brin_xlog.h"
+#include "access/heapam_xlog.h"
 #include "access/xlog.h"
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "access/xact.h"
-#include "access/xloginsert.h"
 #include "catalog/index.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -618,16 +618,18 @@ brinbuild(PG_FUNCTION_ARGS)
 	{
 		xl_brin_createidx xlrec;
 		XLogRecPtr	recptr;
+		XLogRecData rdata;
 		Page		page;
 
 		xlrec.version = BRIN_CURRENT_VERSION;
 		xlrec.pagesPerRange = BrinGetPagesPerRange(index);
 
-		XLogBeginInsert();
-		XLogRegisterData((char *) &xlrec, SizeOfBrinCreateIdx);
-		XLogRegisterBuffer(0, meta, REGBUF_WILL_INIT);
+		rdata.buffer = InvalidBuffer;
+		rdata.data = (char *) &xlrec;
+		rdata.len = SizeOfBrinCreateIdx;
+		rdata.next = NULL;
 
-		recptr = XLogInsert(RM_BRIN_ID, XLOG_BRIN_CREATE_INDEX);
+		recptr = XLogInsert(RM_BRIN_ID, XLOG_BRIN_CREATE_INDEX, &rdata);
 
 		page = BufferGetPage(meta);
 		PageSetLSN(page, recptr);
@@ -645,7 +647,7 @@ brinbuild(PG_FUNCTION_ARGS)
 	 * Now scan the relation.  No syncscan allowed here because we want the
 	 * heap blocks in physical order.
 	 */
-	reltuples = IndexBuildHeapScan(heap, index, indexInfo, false,
+	reltuples = IndexBuildScan(heap, index, indexInfo, false,
 								   brinbuildCallback, (void *) state);
 
 	/* process the final batch */

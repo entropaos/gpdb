@@ -14,7 +14,7 @@
 #ifndef BRIN_XLOG_H
 #define BRIN_XLOG_H
 
-#include "access/xlogreader.h"
+#include "access/xlog.h"
 #include "lib/stringinfo.h"
 #include "storage/bufpage.h"
 #include "storage/itemptr.h"
@@ -42,82 +42,60 @@
  */
 #define XLOG_BRIN_INIT_PAGE		0x80
 
-/*
- * This is what we need to know about a BRIN index create.
- *
- * Backup block 0: metapage
- */
+/* This is what we need to know about a BRIN index create */
 typedef struct xl_brin_createidx
 {
 	BlockNumber pagesPerRange;
+	RelFileNode node;
 	uint16		version;
 } xl_brin_createidx;
 #define SizeOfBrinCreateIdx (offsetof(xl_brin_createidx, version) + sizeof(uint16))
 
 /*
  * This is what we need to know about a BRIN tuple insert
- *
- * Backup block 0: main page, block data is the new BrinTuple.
- * Backup block 1: revmap page
  */
 typedef struct xl_brin_insert
 {
+	RelFileNode node;
 	BlockNumber heapBlk;
 
 	/* extra information needed to update the revmap */
+	BlockNumber revmapBlk;
 	BlockNumber pagesPerRange;
 
-	/* offset number in the main page to insert the tuple to. */
-	OffsetNumber offnum;
+	uint16          tuplen;
+	ItemPointerData tid;
+	/* tuple data follows at end of struct */
 } xl_brin_insert;
 
-#define SizeOfBrinInsert	(offsetof(xl_brin_insert, offnum) + sizeof(OffsetNumber))
+#define SizeOfBrinInsert	(offsetof(xl_brin_insert, tid) + sizeof(ItemPointerData))
 
 /*
- * A cross-page update is the same as an insert, but also stores information
- * about the old tuple.
- *
- * Like in xlog_brin_update:
- * Backup block 0: new page, block data includes the new BrinTuple.
- * Backup block 1: revmap page
- *
- * And in addition:
- * Backup block 2: old page
+ * A cross-page update is the same as an insert, but also store the old tid
  */
 typedef struct xl_brin_update
 {
-	/* offset number of old tuple on old page */
-	OffsetNumber oldOffnum;
+	ItemPointerData oldtid;
 
 	xl_brin_insert insert;
 } xl_brin_update;
 
 #define SizeOfBrinUpdate	(offsetof(xl_brin_update, insert) + SizeOfBrinInsert)
 
-/*
- * This is what we need to know about a BRIN tuple samepage update
- *
- * Backup block 0: updated page, with new BrinTuple as block data
- */
+/* This is what we need to know about a BRIN tuple samepage update */
 typedef struct xl_brin_samepage_update
 {
-	OffsetNumber offnum;
+	RelFileNode node;
+	ItemPointerData tid;
+	/* tuple data follows at end of struct */
 } xl_brin_samepage_update;
 
-#define SizeOfBrinSamepageUpdate		(sizeof(OffsetNumber))
+#define SizeOfBrinSamepageUpdate		(offsetof(xl_brin_samepage_update, tid) + sizeof(ItemPointerData))
 
-/*
- * This is what we need to know about a revmap extension
- *
- * Backup block 0: metapage
- * Backup block 1: new revmap page
- */
+/* This is what we need to know about a revmap extension */
 typedef struct xl_brin_revmap_extend
 {
-	/*
-	 * XXX: This is actually redundant - the block number is stored as part of
-	 * backup block 1.
-	 */
+	RelFileNode node;
 	BlockNumber targetBlk;
 } xl_brin_revmap_extend;
 
@@ -125,8 +103,8 @@ typedef struct xl_brin_revmap_extend
 								 sizeof(BlockNumber))
 
 
-extern void brin_redo(XLogReaderState *record);
-extern void brin_desc(StringInfo buf, XLogReaderState *record);
+extern void brin_desc(StringInfo buf, XLogRecord *record);
+extern void brin_redo(XLogRecPtr lsn, XLogRecord *record);
 extern const char *brin_identify(uint8 info);
 
 #endif   /* BRIN_XLOG_H */

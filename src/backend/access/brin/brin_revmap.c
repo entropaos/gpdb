@@ -26,7 +26,6 @@
 #include "access/brin_tuple.h"
 #include "access/brin_xlog.h"
 #include "access/rmgr.h"
-#include "access/xloginsert.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"

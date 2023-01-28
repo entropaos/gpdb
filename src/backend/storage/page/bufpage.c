@@ -173,12 +173,11 @@ PageIsVerified(Page page, BlockNumber blkno)
  *	!!! EREPORT(ERROR) IS DISALLOWED HERE !!!
  */
 OffsetNumber
-PageAddItem(Page page,
-			Item item,
-			Size size,
-			OffsetNumber offsetNumber,
-			bool overwrite,
-			bool is_heap)
+PageAddItemExtended(Page page,
+					Item item,
+					Size size,
+					OffsetNumber offsetNumber,
+					int flags)
 {
 	PageHeader	phdr = (PageHeader) page;
 	Size		alignedSize;
@@ -209,7 +208,7 @@ PageAddItem(Page page,
 	if (OffsetNumberIsValid(offsetNumber))
 	{
 		/* yes, check it */
-		if (overwrite)
+		if ((flags & PAI_OVERWRITE) != 0)
 		{
 			if (offsetNumber < limit)
 			{
@@ -257,13 +256,18 @@ PageAddItem(Page page,
 		}
 	}
 
-	if (offsetNumber > limit)
+	/*
+	 * Reject placing items beyond the first unused line pointer, unless
+	 * caller asked for that behavior specifically.
+	 */
+	if ((flags & PAI_ALLOW_FAR_OFFSET) == 0 && offsetNumber > limit)
 	{
 		elog(WARNING, "specified item offset is too large");
 		return InvalidOffsetNumber;
 	}
 
-	if (is_heap && offsetNumber > MaxHeapTuplesPerPage)
+	/* Reject placing items beyond heap boundary, if heap */
+	if ((flags & PAI_IS_HEAP) != 0 && offsetNumber > MaxHeapTuplesPerPage)
 	{
 		elog(WARNING, "can't put more than MaxHeapTuplesPerPage items in a heap page");
 		return InvalidOffsetNumber;
@@ -275,7 +279,10 @@ PageAddItem(Page page,
 	 * Note: do arithmetic as signed ints, to avoid mistakes if, say,
 	 * alignedSize > pd_upper.
 	 */
-	if (offsetNumber == limit || needshuffle)
+	if ((flags & PAI_ALLOW_FAR_OFFSET) != 0)
+		lower = Max(phdr->pd_lower,
+					SizeOfPageHeaderData + sizeof(ItemIdData) * offsetNumber);
+	else if (offsetNumber == limit || needshuffle)
 		lower = phdr->pd_lower + sizeof(ItemIdData);
 	else
 		lower = phdr->pd_lower;
@@ -321,6 +328,27 @@ PageAddItem(Page page,
 	phdr->pd_upper = (LocationIndex) upper;
 
 	return offsetNumber;
+}
+
+/*
+ *	PageAddItem
+ *
+ *	Add an item to a page.  Return value is offset at which it was
+ *	inserted, or InvalidOffsetNumber if the item is not inserted for
+ *	any reason.
+ *
+ *	Passing the 'overwrite' and 'is_heap' parameters as true causes the
+ *	PAI_OVERWRITE and PAI_IS_HEAP flags to be set, respectively.
+ *
+ *	!!! EREPORT(ERROR) IS DISALLOWED HERE !!!
+ */
+OffsetNumber
+PageAddItem(Page page, Item item, Size size, OffsetNumber offsetNumber,
+			bool overwrite, bool is_heap)
+{
+	return PageAddItemExtended(page, item, size, offsetNumber,
+							   overwrite ? PAI_OVERWRITE : 0 |
+							   is_heap ? PAI_IS_HEAP : 0);
 }
 
 /*

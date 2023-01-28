@@ -743,7 +743,7 @@ DATA(insert OID = 3579 ( cos  PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 7198 "719
 DESCR("cos");
 
 /* cot(complex) => complex */
-DATA(insert OID = 3580 ( cot  PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 7198 "7198" _null_ _null_ _null_ _null_ complex_cot _null_ _null_ _null_ n a ));
+DATA(insert OID = 7170 ( cot  PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 7198 "7198" _null_ _null_ _null_ _null_ complex_cot _null_ _null_ _null_ n a ));
 DESCR("cot");
 
 /* sin(complex) => complex */
