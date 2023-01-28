@@ -280,6 +280,7 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 		scan->rs_startblock = 0;
 	}
 
+	scan->rs_numblocks = InvalidBlockNumber;
 	scan->rs_inited = false;
 	scan->rs_ctup.t_data = NULL;
 	ItemPointerSetInvalid(&scan->rs_ctup.t_self);
@@ -299,6 +300,25 @@ initscan(HeapScanDesc scan, ScanKey key, bool is_rescan)
 	 * underlying bitmap index scans will be counted).
 	 */
 	pgstat_count_heap_scan(scan->rs_rd);
+}
+
+/*
+ * heap_setscanlimits - restrict range of a heapscan
+ *
+ * startBlk is the page to start at
+ * numBlks is number of pages to scan (InvalidBlockNumber means "all")
+ */
+void
+heap_setscanlimits(HeapScanDesc scan, BlockNumber startBlk, BlockNumber numBlks)
+{
+	Assert(!scan->rs_inited);	/* else too late to change */
+	Assert(!scan->rs_syncscan); /* else rs_startblock is significant */
+
+	/* Check startBlk is valid (but allow case of zero blocks...) */
+	Assert(startBlk == 0 || startBlk < scan->rs_nblocks);
+
+	scan->rs_startblock = startBlk;
+	scan->rs_numblocks = numBlks;
 }
 
 /*
@@ -512,7 +532,7 @@ heapgettup(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -546,7 +566,7 @@ heapgettup(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -560,8 +580,14 @@ heapgettup(HeapScanDesc scan,
 			 * forward scanners.
 			 */
 			scan->rs_syncscan = false;
-			/* start from last page of the scan */
-			if (scan->rs_startblock > 0)
+
+			/*
+			 * Start from last page of the scan.  Ensure we take into account
+			 * rs_numblocks if it's been adjusted by heap_setscanlimits().
+			 */
+			if (scan->rs_numblocks != InvalidBlockNumber)
+				page = (scan->rs_startblock + scan->rs_numblocks - 1) % scan->rs_nblocks;
+			else if (scan->rs_startblock > 0)
 				page = scan->rs_startblock - 1;
 			else
 				page = scan->rs_nblocks - 1;
@@ -688,7 +714,8 @@ heapgettup(HeapScanDesc scan,
 		 */
 		if (backward)
 		{
-			finished = (page == scan->rs_startblock);
+			finished = (page == scan->rs_startblock) ||
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 			if (page == 0)
 				page = scan->rs_nblocks;
 			page--;
@@ -698,7 +725,8 @@ heapgettup(HeapScanDesc scan,
 			page++;
 			if (page >= scan->rs_nblocks)
 				page = 0;
-			finished = (page == scan->rs_startblock);
+			finished = (page == scan->rs_startblock) ||
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 
 			/*
 			 * Report our new scan position for synchronization purposes. We
@@ -790,7 +818,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -821,7 +849,7 @@ heapgettup_pagemode(HeapScanDesc scan,
 			/*
 			 * return null immediately if relation is empty
 			 */
-			if (scan->rs_nblocks == 0)
+			if (scan->rs_nblocks == 0 || scan->rs_numblocks == 0)
 			{
 				Assert(!BufferIsValid(scan->rs_cbuf));
 				tuple->t_data = NULL;
@@ -835,8 +863,14 @@ heapgettup_pagemode(HeapScanDesc scan,
 			 * forward scanners.
 			 */
 			scan->rs_syncscan = false;
-			/* start from last page of the scan */
-			if (scan->rs_startblock > 0)
+
+			/*
+			 * Start from last page of the scan.  Ensure we take into account
+			 * rs_numblocks if it's been adjusted by heap_setscanlimits().
+			 */
+			if (scan->rs_numblocks != InvalidBlockNumber)
+				page = (scan->rs_startblock + scan->rs_numblocks - 1) % scan->rs_nblocks;
+			else if (scan->rs_startblock > 0)
 				page = scan->rs_startblock - 1;
 			else
 				page = scan->rs_nblocks - 1;
@@ -951,7 +985,8 @@ heapgettup_pagemode(HeapScanDesc scan,
 		 */
 		if (backward)
 		{
-			finished = (page == scan->rs_startblock);
+			finished = (page == scan->rs_startblock) ||
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 			if (page == 0)
 				page = scan->rs_nblocks;
 			page--;
@@ -961,7 +996,8 @@ heapgettup_pagemode(HeapScanDesc scan,
 			page++;
 			if (page >= scan->rs_nblocks)
 				page = 0;
-			finished = (page == scan->rs_startblock);
+			finished = (page == scan->rs_startblock) ||
+				(scan->rs_numblocks != InvalidBlockNumber ? --scan->rs_numblocks == 0 : false);
 
 			/*
 			 * Report our new scan position for synchronization purposes. We

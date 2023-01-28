@@ -140,6 +140,7 @@ LogicalDecodingProcessRecord(LogicalDecodingContext *ctx, XLogRecord *record)
 		case RM_GIST_ID:
 		case RM_SEQ_ID:
 		case RM_SPGIST_ID:
+		case RM_BRIN_ID:
 		case RM_BITMAP_ID:
 		case RM_DISTRIBUTEDLOG_ID:
 			/* just deal with xid, and done */
