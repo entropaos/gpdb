@@ -1052,13 +1052,13 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 		scanNumBlks = state->bs_pagesPerRange;
 	}
 
-        /*
-         * Need an EState for evaluation of index expressions and partial-index
-         * predicates.  Also a slot to hold the current tuple.
-         */
-        estate = CreateExecutorState();
-        econtext = GetPerTupleExprContext(estate);
-        econtext->ecxt_scantuple = MakeSingleTupleTableSlot(RelationGetDescr(heapRel));
+	/*
+	 * Need an EState for evaluation of index expressions and partial-index
+	 * predicates.  Also a slot to hold the current tuple.
+	 */
+	estate = CreateExecutorState();
+	econtext = GetPerTupleExprContext(estate);
+	econtext->ecxt_scantuple = MakeSingleTupleTableSlot(RelationGetDescr(heapRel));
 
 	/*
 	 * Execute the partial heap scan covering the heap blocks in the specified
@@ -1128,6 +1128,7 @@ summarize_range(IndexInfo *indexInfo, BrinBuildState *state, Relation heapRel,
 	}
 
 	ReleaseBuffer(phbuf);
+	ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
 	FreeExecutorState(estate);
 }
 
