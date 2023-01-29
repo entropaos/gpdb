@@ -274,7 +274,8 @@ Datum
 bringetbitmap(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
-	TIDBitmap  *tbm = (TIDBitmap *) PG_GETARG_POINTER(1);
+	Node 	  **bmNodeP = (Node **) PG_GETARG_POINTER(1);
+	TIDBitmap  *tbm;
 	Relation	idxRel = scan->indexRelation;
 	Buffer		buf = InvalidBuffer;
 	BrinDesc   *bdesc;
@@ -287,6 +288,23 @@ bringetbitmap(PG_FUNCTION_ARGS)
 	FmgrInfo   *consistentFn;
 	MemoryContext oldcxt;
 	MemoryContext perRangeCxt;
+
+	/*
+	 * GPDB specific code. Since GPDB also support StreamBitmap
+	 * in bitmap index. So normally we need to create specific bitmap
+	 * node in the amgetbitmap AM.
+	 */
+	Assert(bmNodeP);
+	if (*bmNodeP == NULL)
+	{
+		/* XXX should we use less than work_mem for this? */
+		tbm = tbm_create(work_mem * 1024L);
+		*bmNodeP = (Node *) tbm;
+	}
+	else if (!IsA(*bmNodeP, TIDBitmap))
+		elog(ERROR, "non brin bitmap");
+	else
+		tbm = (TIDBitmap *)*bmNodeP;
 
 	opaque = (BrinOpaque *) scan->opaque;
 	bdesc = opaque->bo_bdesc;
