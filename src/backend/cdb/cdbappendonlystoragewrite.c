@@ -408,6 +408,9 @@ AppendOnlyStorageWrite_DoPadOutRemainder(AppendOnlyStorageWrite *storageWrite,
 	bool		doPad;
 	uint8	   *buffer;
 
+elog(NOTICE, "AppendOnlyStorageWrite_DoPadOutRemainder: padLen=%d, safeWrite=%d",
+padLen, safeWrite);
+
 	/* early exit if no pad needed */
 	if (safeWrite == 0)
 		return;
@@ -416,6 +419,9 @@ AppendOnlyStorageWrite_DoPadOutRemainder(AppendOnlyStorageWrite *storageWrite,
 	nextBoundaryPosition =
 		((nextWritePosition + safeWrite - 1) / safeWrite) * safeWrite;
 	safeWriteRemainder = (int32) (nextBoundaryPosition - nextWritePosition);
+
+elog(NOTICE, "AppendOnlyStorageWrite_DoPadOutRemainder: nextWritePosition=%ld, nextBoundaryPosition=%ld, safeWriteRemainder=%d",
+nextWritePosition, nextBoundaryPosition, safeWriteRemainder);
 
 	if (safeWriteRemainder <= 0)
 		doPad = false;
@@ -1415,6 +1421,7 @@ AppendOnlyStorageWrite_FinishBuffer(AppendOnlyStorageWrite *storageWrite,
 
 		/* Declare it finished. */
 		storageWrite->currentCompleteHeaderLen = 0;
+		storageWrite->aoBlockSize = bufferLen;
 
 		elogif(Debug_appendonly_print_insert, LOG,
 			   "Append-only insert finished uncompressed block for table '%s' "
@@ -1462,6 +1469,7 @@ AppendOnlyStorageWrite_FinishBuffer(AppendOnlyStorageWrite *storageWrite,
 								   storageWrite->needsWAL);
 		/* Declare it finished. */
 		storageWrite->currentCompleteHeaderLen = 0;
+		storageWrite->aoBlockSize = bufferLen;
 	}
 
 	Assert(storageWrite->currentCompleteHeaderLen == 0);
@@ -1613,6 +1621,7 @@ AppendOnlyStorageWrite_Content(AppendOnlyStorageWrite *storageWrite,
 
 			/* Declare it finished. */
 			storageWrite->currentCompleteHeaderLen = 0;
+			storageWrite->aoBlockSize = bufferLen;
 		}
 	}
 	else
@@ -1658,6 +1667,7 @@ AppendOnlyStorageWrite_Content(AppendOnlyStorageWrite *storageWrite,
 
 		/* Declare it finished. */
 		storageWrite->currentCompleteHeaderLen = 0;
+		storageWrite->aoBlockSize = bufferLen;
 
 		/*
 		 * Now write the fragments as type Block.
@@ -1732,6 +1742,7 @@ AppendOnlyStorageWrite_Content(AppendOnlyStorageWrite *storageWrite,
 
 				/* Declare it finished. */
 				storageWrite->currentCompleteHeaderLen = 0;
+				storageWrite->aoBlockSize = bufferLen;
 			}
 
 			countdownContentLen -= smallContentLen;

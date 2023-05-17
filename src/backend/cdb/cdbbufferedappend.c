@@ -336,7 +336,6 @@ BufferedAppendFinishBuffer(BufferedAppend *bufferedAppend,
 			 bufferedAppend->relationName,
 			 bufferedAppend->filePathName);
 
-
 	newLen = bufferedAppend->largeWriteLen + usedLen;
 	Assert(newLen <= bufferedAppend->maxLargeWriteLen +
 		   bufferedAppend->maxBufferLen);

@@ -169,6 +169,7 @@ typedef struct AppendOnlyStorageWrite
 														 * rite_block GUC is
 														 * set. */
 	int			blocksize;		/* For AO or CO uncompresed block size		   */
+	int			aoBlockSize;	/* size of the total varblock */
 	PGFunction *compression_functions;	/* For AO or CO compression.                   */
 	/* The array index corresponds to COMP_FUNC_*  */
 

@@ -69,11 +69,35 @@ SeqNext(SeqScanState *node)
 	 */
 	if (node->ss_currentScanDesc_ao)
 	{
-		appendonly_getnext(node->ss_currentScanDesc_ao, direction, slot);
+		AppendOnlyScanDesc desc = node->ss_currentScanDesc_ao;
+		bool ok;
+		ok = appendonly_getnext(node->ss_currentScanDesc_ao, direction, slot);
+		elog(NOTICE, "headerOffset: exec %ld storageRead %ld whole block length=%d numRows=%d ok=%s",
+				desc->executorReadBlock.headerOffsetInFile,
+				desc->storageRead.current.headerOffsetInFile,
+				desc->storageRead.current.overallBlockLen,
+				desc->storageRead.current.rowCount,
+				ok ? "yes" : "no"
+		);
 	}
 	else if (node->ss_currentScanDesc_aocs)
 	{
-		aocs_getnext(node->ss_currentScanDesc_aocs, direction, slot);
+		AOCSScanDesc desc;
+		bool ok;
+		desc = node->ss_currentScanDesc_aocs;
+		ok = aocs_getnext(node->ss_currentScanDesc_aocs, direction, slot);
+#if 0
+		for (int i = 0; i < desc->num_proj_atts; i++)
+		{
+			DatumStreamRead *dsr;
+			dsr = desc->ds[desc->proj_atts[i]];
+			elog(NOTICE, "headerOffset, col%d %ld %ld, block length = %d ok = %s",
+					desc->proj_atts[i], dsr->blockFileOffset,
+					dsr->ao_read.current.headerOffsetInFile,
+					dsr->ao_read.current.overallBlockLen,
+					ok ? "yes" : "no");
+		}
+#endif
 	}
 	else
 	{

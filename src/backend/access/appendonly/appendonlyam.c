@@ -2845,11 +2845,13 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 	VarBlockByteLen itemLen;
 	uint8	   *itemPtr;
 	MemTuple	tup = NULL;
+	int64		initial_offset;
 	bool		need_toast;
 	bool		isLargeContent;
 
 	Assert(aoInsertDesc->usableBlockSize > 0 && aoInsertDesc->tempSpaceLen > 0);
 	Assert(aoInsertDesc->toast_tuple_threshold > 0 && aoInsertDesc->toast_tuple_target > 0);
+	initial_offset = BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend);
 
 #ifdef FAULT_INJECTOR
 	FaultInjector_InjectFaultIfSet(
@@ -2963,6 +2965,8 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 								itemLen, aoInsertDesc->varBlockMaker.maxBufferLen),
 						 errcontext_appendonly_insert_block_user_limit(aoInsertDesc)));
 			}
+elog(NOTICE, "appendonly_insert TOOLARGE: offset=%ld",
+BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend));
 		}
 		else
 		{
@@ -2972,6 +2976,10 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 			finishWriteBlock(aoInsertDesc);
 			Assert(aoInsertDesc->nonCompressedData == NULL);
 			Assert(!AppendOnlyStorageWrite_IsBufferAllocated(&aoInsertDesc->storageWrite));
+elog(NOTICE, "appendonly_insert switch: offset=%ld, blocksize=%d",
+BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend),
+aoInsertDesc->storageWrite.aoBlockSize
+);
 
 			/*
 			 * Setup a new VarBlock.
@@ -3049,6 +3057,13 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 		Assert(!AppendOnlyStorageWrite_IsBufferAllocated(&aoInsertDesc->storageWrite));
 
 		setupNextWriteBlock(aoInsertDesc);
+		elog(NOTICE, "large content, itemlen = %d", itemLen);
+	}
+	if (initial_offset != BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend))
+	{
+		elog(NOTICE, "appendonly_insert: offset changes from %ld to %ld, count=%ld", initial_offset,
+				BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend),
+				aoInsertDesc->insertCount);
 	}
 
 	aoInsertDesc->insertCount++;
@@ -3108,10 +3123,17 @@ appendonly_insert(AppendOnlyInsertDesc aoInsertDesc,
 void
 appendonly_insert_finish(AppendOnlyInsertDesc aoInsertDesc)
 {
+	int64 offset = BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend);
 	/*
 	 * Finish up that last varblock.
 	 */
 	finishWriteBlock(aoInsertDesc);
+elog(NOTICE, "appendonly_insert_finish1: offset=%ld, offset2=%ld offset-diffsize=%ld aoBlockSize=%d",
+offset,
+BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend),
+BufferedAppendNextBufferPosition(&aoInsertDesc->storageWrite.bufferedAppend) - offset,
+aoInsertDesc->storageWrite.aoBlockSize
+);
 
 	CloseWritableFileSeg(aoInsertDesc);
 
